@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
+	"github.com/ScriptRock/crypto/ssh"
+	"github.com/ScriptRock/crypto/ssh/agent"
 
-	"github.com/pkg/sftp"
+	"github.com/ScriptRock/sftp"
 )
 
 var (
