@@ -34,7 +34,7 @@ const (
 
 var testServerImpl = flag.Bool("testserver", false, "perform integration tests against sftp package server instance")
 var testIntegration = flag.Bool("integration", false, "perform integration tests against sftp server process")
-var testSftp = flag.String("sftp", "/usr/lib/openssh/sftp-server", "location of the sftp server binary")
+var testSftp = flag.String("sftp", sftpServer, "location of the sftp server binary")
 
 type delayedWrite struct {
 	t time.Time
@@ -85,8 +85,14 @@ func (w delayedWriter) Close() error {
 }
 
 func testClientGoSvr(t testing.TB, readonly bool, delay time.Duration) (*Client, *exec.Cmd) {
-	txPipeRd, txPipeWr := io.Pipe()
-	rxPipeRd, rxPipeWr := io.Pipe()
+	txPipeRd, txPipeWr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rxPipeRd, rxPipeWr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	server, err := NewServer(txPipeRd, rxPipeWr, os.Stderr, 0, readonly, ".")
 	if err != nil {
@@ -182,7 +188,7 @@ func TestClientLstat(t *testing.T) {
 	}
 }
 
-func TestClientLstatMissing(t *testing.T) {
+func TestClientLstatIsNotExist(t *testing.T) {
 	sftp, cmd := testClient(t, READONLY, NO_DELAY)
 	defer cmd.Wait()
 	defer sftp.Close()
@@ -193,9 +199,8 @@ func TestClientLstatMissing(t *testing.T) {
 	}
 	os.Remove(f.Name())
 
-	_, err = sftp.Lstat(f.Name())
-	if err1, ok := err.(*StatusError); !ok || err1.Code != ssh_FX_NO_SUCH_FILE {
-		t.Fatalf("Lstat: want: %v, got %#v", ssh_FX_NO_SUCH_FILE, err)
+	if _, err := sftp.Lstat(f.Name()); !os.IsNotExist(err) {
+		t.Errorf("os.IsNotExist(%v) = false, want true", err)
 	}
 }
 
@@ -234,6 +239,26 @@ func TestClientOpen(t *testing.T) {
 	}
 	if err := got.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestClientOpenIsNotExist(t *testing.T) {
+	sftp, cmd := testClient(t, READONLY, NO_DELAY)
+	defer cmd.Wait()
+	defer sftp.Close()
+
+	if _, err := sftp.Open("/doesnt/exist/"); !os.IsNotExist(err) {
+		t.Errorf("os.IsNotExist(%v) = false, want true", err)
+	}
+}
+
+func TestClientStatIsNotExist(t *testing.T) {
+	sftp, cmd := testClient(t, READONLY, NO_DELAY)
+	defer cmd.Wait()
+	defer sftp.Close()
+
+	if _, err := sftp.Stat("/doesnt/exist/"); !os.IsNotExist(err) {
+		t.Errorf("os.IsNotExist(%v) = false, want true", err)
 	}
 }
 
@@ -379,6 +404,27 @@ func TestClientCreateFailed(t *testing.T) {
 	}
 }
 
+func TestClientFileName(t *testing.T) {
+	sftp, cmd := testClient(t, READONLY, NO_DELAY)
+	defer cmd.Wait()
+	defer sftp.Close()
+
+	f, err := ioutil.TempFile("", "sftptest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+
+	f2, err := sftp.Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := f2.Name(), f.Name(); got != want {
+		t.Fatalf("Name: got %q want %q", want, got)
+	}
+}
+
 func TestClientFileStat(t *testing.T) {
 	sftp, cmd := testClient(t, READONLY, NO_DELAY)
 	defer cmd.Wait()
@@ -482,6 +528,27 @@ func TestClientRename(t *testing.T) {
 	}
 }
 
+func TestClientGetwd(t *testing.T) {
+	sftp, cmd := testClient(t, READONLY, NO_DELAY)
+	defer cmd.Wait()
+	defer sftp.Close()
+
+	lwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rwd, err := sftp.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !path.IsAbs(rwd) {
+		t.Fatalf("Getwd: wanted absolute path, got %q", rwd)
+	}
+	if lwd != rwd {
+		t.Fatalf("Getwd: want %q, got %q", lwd, rwd)
+	}
+}
+
 func TestClientReadLink(t *testing.T) {
 	sftp, cmd := testClient(t, READWRITE, NO_DELAY)
 	defer cmd.Wait()
@@ -573,11 +640,11 @@ func TestClientChown(t *testing.T) {
 		t.Log("must be root to run chown tests")
 		t.Skip()
 	}
-	toUid, err := strconv.Atoi(chownto.Uid)
+	toUID, err := strconv.Atoi(chownto.Uid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	toGid, err := strconv.Atoi(chownto.Gid)
+	toGID, err := strconv.Atoi(chownto.Gid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +657,7 @@ func TestClientChown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sftp.Chown(f.Name(), toUid, toGid); err != nil {
+	if err := sftp.Chown(f.Name(), toUID, toGID); err != nil {
 		t.Fatal(err)
 	}
 	after, err := exec.Command("ls", "-nl", f.Name()).Output()
@@ -630,11 +697,11 @@ func TestClientChownReadonly(t *testing.T) {
 		t.Log("must be root to run chown tests")
 		t.Skip()
 	}
-	toUid, err := strconv.Atoi(chownto.Uid)
+	toUID, err := strconv.Atoi(chownto.Uid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	toGid, err := strconv.Atoi(chownto.Gid)
+	toGID, err := strconv.Atoi(chownto.Gid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +710,7 @@ func TestClientChownReadonly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sftp.Chown(f.Name(), toUid, toGid); err == nil {
+	if err := sftp.Chown(f.Name(), toUID, toGID); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -1097,14 +1164,14 @@ func TestClientWalk(t *testing.T) {
 	makeTree(t)
 	errors := make([]error, 0, 10)
 	clear := true
-	markFn := func(walker *fs.Walker) (err error) {
+	markFn := func(walker *fs.Walker) error {
 		for walker.Step() {
-			err = mark(walker.Path(), walker.Stat(), walker.Err(), &errors, clear)
+			err := mark(walker.Path(), walker.Stat(), walker.Err(), &errors, clear)
 			if err != nil {
-				break
+				return err
 			}
 		}
-		return err
+		return nil
 	}
 	// Expect no errors.
 	err := markFn(sftp.Walk(tree.name))
@@ -1175,7 +1242,12 @@ func TestClientWalk(t *testing.T) {
 
 // sftp/issue/42, abrupt server hangup would result in client hangs.
 func TestServerRoughDisconnect(t *testing.T) {
+	if *testServerImpl {
+		t.Skipf("skipping with -testserver")
+	}
 	sftp, cmd := testClient(t, READONLY, NO_DELAY)
+	defer cmd.Wait()
+	defer sftp.Close()
 
 	f, err := sftp.Open("/dev/zero")
 	if err != nil {
@@ -1188,7 +1260,23 @@ func TestServerRoughDisconnect(t *testing.T) {
 	}()
 
 	io.Copy(ioutil.Discard, f)
-	sftp.Close()
+}
+
+// sftp/issue/26 writing to a read only file caused client to loop.
+func TestClientWriteToROFile(t *testing.T) {
+	sftp, cmd := testClient(t, READWRITE, NO_DELAY)
+	defer cmd.Wait()
+	defer sftp.Close()
+
+	f, err := sftp.Open("/dev/zero")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	_, err = f.Write([]byte("hello"))
+	if err == nil {
+		t.Fatal("expected error, got", err)
+	}
 }
 
 func benchmarkRead(b *testing.B, bufsize int, delay time.Duration) {

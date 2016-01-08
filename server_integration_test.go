@@ -36,14 +36,6 @@ const (
 	OPENSSH_SFTP = false
 )
 
-/***********************************************************************************************
-
-
-SSH server scaffolding; very simple, no strict auth. This is for unit testing, not real servers
-
-
-***********************************************************************************************/
-
 var (
 	hostPrivateKeySigner ssh.Signer
 	privKey              = []byte(`
@@ -283,48 +275,40 @@ func (chsvr *sshSessionChannelServer) handleSubsystem(req *ssh.Request) error {
 
 	// no idea if this is actually correct spec-wise.
 	// just enough for an sftp server to start.
-	if subsystemReq.Name == "sftp" {
-		req.Reply(true, nil)
-
-		if !chsvr.svr.useSubsystem {
-			// use the openssh sftp server backend; this is to test the ssh code, not the sftp code,
-			// or is used for comparison between our sftp subsystem and the openssh sftp subsystem
-			cmd := exec.Command(*testSftp, "-e", "-l", "DEBUG") // log to stderr
-			cmd.Stdin = chsvr.ch
-			cmd.Stdout = chsvr.ch
-			cmd.Stderr = sftpServerDebugStream
-			if err := cmd.Start(); err != nil {
-				return err
-			}
-			return cmd.Wait()
-		} else {
-			sftpServer, err := NewServer(chsvr.ch, chsvr.ch, sftpServerDebugStream, 0, false, ".")
-			if err != nil {
-				return err
-			}
-
-			// wait for the session to close
-			runErr := sftpServer.Serve()
-			exitStatus := uint32(1)
-			if runErr == nil {
-				exitStatus = uint32(0)
-			}
-
-			_, exitStatusErr := chsvr.ch.SendRequest("exit-status", false, ssh.Marshal(sshSubsystemExitStatus{exitStatus}))
-			return exitStatusErr
-		}
-	} else {
+	if subsystemReq.Name != "sftp" {
 		return req.Reply(false, nil)
 	}
+
+	req.Reply(true, nil)
+
+	if !chsvr.svr.useSubsystem {
+		// use the openssh sftp server backend; this is to test the ssh code, not the sftp code,
+		// or is used for comparison between our sftp subsystem and the openssh sftp subsystem
+		cmd := exec.Command(*testSftp, "-e", "-l", "DEBUG") // log to stderr
+		cmd.Stdin = chsvr.ch
+		cmd.Stdout = chsvr.ch
+		cmd.Stderr = sftpServerDebugStream
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		return cmd.Wait()
+	}
+
+	sftpServer, err := NewServer(chsvr.ch, chsvr.ch, sftpServerDebugStream, 0, false, ".")
+	if err != nil {
+		return err
+	}
+
+	// wait for the session to close
+	runErr := sftpServer.Serve()
+	exitStatus := uint32(1)
+	if runErr == nil {
+		exitStatus = uint32(0)
+	}
+
+	_, exitStatusErr := chsvr.ch.SendRequest("exit-status", false, ssh.Marshal(sshSubsystemExitStatus{exitStatus}))
+	return exitStatusErr
 }
-
-/***********************************************************************************************
-
-
-Actual unit tests
-
-
-***********************************************************************************************/
 
 // starts an ssh server to test. returns: host string and port
 func testServer(t *testing.T, useSubsystem bool, readonly bool) (net.Listener, string, int) {
@@ -350,7 +334,7 @@ func testServer(t *testing.T, useSubsystem bool, readonly bool) (net.Listener, s
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				fmt.Fprintf(sshServerDebugStream, "ssh server socket closed\n")
+				fmt.Fprintf(sshServerDebugStream, "ssh server socket closed: %v\n", err)
 				break
 			}
 
@@ -358,7 +342,8 @@ func testServer(t *testing.T, useSubsystem bool, readonly bool) (net.Listener, s
 				defer conn.Close()
 				sshSvr, err := sshServerFromConn(conn, useSubsystem, basicServerConfig())
 				if err != nil {
-					t.Fatal(err)
+					t.Error(err)
+					return
 				}
 				err = sshSvr.Wait()
 				fmt.Fprintf(sshServerDebugStream, "ssh server finished, err: %v\n", err)
@@ -374,10 +359,18 @@ func runSftpClient(t *testing.T, script string, path string, host string, port i
 	if _, err := os.Stat(*testSftpClientBin); err != nil {
 		t.Skip("sftp client binary unavailable")
 	}
-	cmd := exec.Command(*testSftpClientBin /*"-vvvv",*/, "-b", "-", "-o", "StrictHostKeyChecking=no", "-o", "LogLevel=ERROR", "-o", "UserKnownHostsFile /dev/null", "-P", fmt.Sprintf("%d", port), fmt.Sprintf("%s:%s", host, path))
-	stdout := &bytes.Buffer{}
+	args := []string{
+		// "-vvvv",
+		"-b", "-",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "LogLevel=ERROR",
+		"-o", "UserKnownHostsFile /dev/null",
+		"-P", fmt.Sprintf("%d", port), fmt.Sprintf("%s:%s", host, path),
+	}
+	cmd := exec.Command(*testSftpClientBin, args...)
+	var stdout bytes.Buffer
 	cmd.Stdin = bytes.NewBufferString(script)
-	cmd.Stdout = stdout
+	cmd.Stdout = &stdout
 	cmd.Stderr = sftpClientDebugStream
 	if err := cmd.Start(); err != nil {
 		return "", err
@@ -426,12 +419,14 @@ ls -l /usr/bin/
 			goWords := spaceRegex.Split(goLine, -1)
 			opWords := spaceRegex.Split(opLine, -1)
 			// allow words[2] and [3] to be different as these are users & groups
+			// also allow words[1] to differ as the link count for directories like
+			// proc is unstable during testing as processes are created/destroyed.
 			for j, goWord := range goWords {
 				if j > len(opWords) {
 					bad = true
 				}
 				opWord := opWords[j]
-				if goWord != opWord && j != 2 && j != 3 {
+				if goWord != opWord && j != 1 && j != 2 && j != 3 {
 					bad = true
 				}
 			}
