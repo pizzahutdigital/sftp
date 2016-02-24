@@ -16,7 +16,7 @@ func main() {
 	var (
 		readOnly    bool
 		debugStderr bool
-		debugLevel string
+		debugLevel  string
 	)
 
 	flag.BoolVar(&readOnly, "R", false, "read-only server")

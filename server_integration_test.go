@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kr/fs"
 	"github.com/ScriptRock/crypto/ssh"
+	"github.com/kr/fs"
 )
 
 var testSftpClientBin = flag.String("sftp_client", "/usr/bin/sftp", "location of the sftp client binary")
