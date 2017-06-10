@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ScriptRock/crypto/ssh"
 	"github.com/kr/fs"
+	"github.com/ScriptRock/crypto/ssh"
 )
 
 var testSftpClientBin = flag.String("sftp_client", "/usr/bin/sftp", "location of the sftp client binary")
@@ -511,9 +511,10 @@ func TestServerRealpath(t *testing.T) {
 
 	// create clients for each server
 	clientConfig := ssh.ClientConfig{
-		Config: ssh.Config{		},
-		User: "test",
-		Auth: []ssh.AuthMethod{ssh.Password("")},
+		Config:          ssh.Config{},
+		User:            "test",
+		Auth:            []ssh.AuthMethod{ssh.Password("")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	clientConfigGo := clientConfig
 	clientConfigOp := clientConfig

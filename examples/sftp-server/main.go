@@ -12,8 +12,8 @@ import (
 	"net"
 	"os"
 
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
+	"github.com/ScriptRock/sftp"
+	"github.com/ScriptRock/crypto/ssh"
 )
 
 // Based on example server code from golang.org/x/crypto/ssh and server_standalone

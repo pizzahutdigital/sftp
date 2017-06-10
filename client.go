@@ -11,31 +11,8 @@ import (
 
 	"github.com/kr/fs"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh"
+	"github.com/ScriptRock/crypto/ssh"
 )
-
-type clientState int
-
-const (
-	stateClosed clientState = iota
-	stateRecvFinished
-	stateRunning
-)
-
-var (
-	errClientClosed       = errors.New("client has closed")
-	errClientRecvFinished = errors.New("client recv finished")
-)
-
-func (cs clientState) usageError() error {
-	if cs == stateClosed {
-		return errClientClosed
-	}
-	if cs == stateRecvFinished {
-		return errClientRecvFinished
-	}
-	return nil
-}
 
 // MaxPacket sets the maximum size of the payload.
 func MaxPacket(size int) func(*Client) error {

@@ -519,12 +519,6 @@ func (p sshFxpFsetstatPacket) respond(svr *Server) error {
 	return svr.sendError(p, err)
 }
 
-func (p sshFxpExtendedPacket) readonly() bool { return p.SpecificPacket.readonly() }
-
-func (p sshFxpExtendedPacket) respond(svr *Server) error {
-	return p.SpecificPacket.respond(svr)
-}
-
 // translateErrno translates a syscall error number to a SFTP error code.
 func translateErrno(errno syscall.Errno) uint32 {
 	switch errno {
