@@ -10,7 +10,9 @@ import (
 	"github.com/ScriptRock/sftp"
 )
 
-func Example(conn *ssh.Client) {
+func Example() {
+	var conn *ssh.Client
+
 	// open an SFTP session over an existing ssh connection.
 	sftp, err := sftp.NewClient(conn)
 	if err != nil {

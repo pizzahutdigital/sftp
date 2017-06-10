@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
+
+	"github.com/pkg/errors"
 )
 
 var (
@@ -117,7 +118,7 @@ func unmarshalStringSafe(b []byte) (string, []byte, error) {
 func sendPacket(w io.Writer, m encoding.BinaryMarshaler) error {
 	bb, err := m.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("marshal2(%#v): binary marshaller failed", err)
+		return errors.Errorf("binary marshaller failed: %v", err)
 	}
 	if debugDumpTxPacketBytes {
 		debug("send packet: %s %d bytes %x", fxp(bb[0]), len(bb), bb[1:])
@@ -128,17 +129,13 @@ func sendPacket(w io.Writer, m encoding.BinaryMarshaler) error {
 	hdr := []byte{byte(l >> 24), byte(l >> 16), byte(l >> 8), byte(l)}
 	_, err = w.Write(hdr)
 	if err != nil {
-		return err
+		return errors.Errorf("failed to send packet header: %v", err)
 	}
 	_, err = w.Write(bb)
-	return err
-}
-
-func (svr *Server) sendPacket(m encoding.BinaryMarshaler) error {
-	// any responder can call sendPacket(); actual socket access must be serialized
-	svr.outMutex.Lock()
-	defer svr.outMutex.Unlock()
-	return sendPacket(svr.out, m)
+	if err != nil {
+		return errors.Errorf("failed to send packet body: %v", err)
+	}
+	return nil
 }
 
 func recvPacket(r io.Reader) (uint8, []byte, error) {
@@ -173,9 +170,6 @@ func unmarshalExtensionPair(b []byte) (extensionPair, []byte, error) {
 		return ep, b, err
 	}
 	ep.Data, b, err = unmarshalStringSafe(b)
-	if err != nil {
-		return ep, b, err
-	}
 	return ep, b, err
 }
 
@@ -262,10 +256,7 @@ func unmarshalIDString(b []byte, id *uint32, str *string) error {
 		return err
 	}
 	*str, b, err = unmarshalStringSafe(b)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 type sshFxpReaddirPacket struct {
@@ -844,21 +835,27 @@ func (p *StatVFS) FreeSpace() uint64 {
 
 // Convert to ssh_FXP_EXTENDED_REPLY packet binary format
 func (p *StatVFS) MarshalBinary() ([]byte, error) {
-	buf := &bytes.Buffer{}
+	var buf bytes.Buffer
 	buf.Write([]byte{ssh_FXP_EXTENDED_REPLY})
-	if err := binary.Write(buf, binary.BigEndian, p); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	err := binary.Write(&buf, binary.BigEndian, p)
+	return buf.Bytes(), err
 }
 
 type sshFxpExtendedPacket struct {
 	ID              uint32
 	ExtendedRequest string
-	SpecificPacket  serverRespondablePacket
+	SpecificPacket  interface {
+		serverRespondablePacket
+		readonly() bool
+	}
 }
 
-func (p sshFxpExtendedPacket) id() uint32 { return p.ID }
+func (p sshFxpExtendedPacket) id() uint32     { return p.ID }
+func (p sshFxpExtendedPacket) readonly() bool { return p.SpecificPacket.readonly() }
+
+func (p sshFxpExtendedPacket) respond(svr *Server) error {
+	return p.SpecificPacket.respond(svr)
+}
 
 func (p *sshFxpExtendedPacket) UnmarshalBinary(b []byte) error {
 	var err error
@@ -874,10 +871,6 @@ func (p *sshFxpExtendedPacket) UnmarshalBinary(b []byte) error {
 	case "statvfs@openssh.com":
 		p.SpecificPacket = &sshFxpExtendedPacketStatVFS{}
 	default:
-		p.SpecificPacket = nil
-	}
-
-	if p.SpecificPacket == nil {
 		return errUnknownExtendedPacket
 	}
 

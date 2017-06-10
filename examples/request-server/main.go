@@ -119,24 +119,8 @@ func main() {
 			}
 		}(requests)
 
-		serverOptions := []sftp.ServerOption{
-			sftp.WithDebug(debugStream),
-		}
-
-		if readOnly {
-			serverOptions = append(serverOptions, sftp.ReadOnly())
-			fmt.Fprintf(debugStream, "Read-only server\n")
-		} else {
-			fmt.Fprintf(debugStream, "Read write server\n")
-		}
-
-		server, err := sftp.NewServer(
-			channel,
-			serverOptions...,
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
+		root := sftp.InMemHandler()
+		server := sftp.NewRequestServer(channel, root)
 		if err := server.Serve(); err == io.EOF {
 			server.Close()
 			log.Print("sftp client exited session.")
