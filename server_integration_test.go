@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kr/fs"
 	"github.com/ScriptRock/crypto/ssh"
+	"github.com/kr/fs"
 )
 
 var testSftpClientBin = flag.String("sftp_client", "/usr/bin/sftp", "location of the sftp client binary")
@@ -687,7 +687,7 @@ func compareDirectoriesRecursive(t *testing.T, aroot, broot string) {
 }
 
 func TestServerPutRecursive(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READWRITE)
 	defer listenerGo.Close()
 
 	dirLocal, err := os.Getwd()
@@ -700,11 +700,17 @@ func TestServerPutRecursive(t *testing.T) {
 	t.Logf("put recursive: local %v remote %v", dirLocal, tmpDirRemote)
 
 	// push this directory (source code etc) recursively to the server
-	if output, err := runSftpClient(t, "mkdir "+tmpDirRemote+"\r\nput -r -P "+dirLocal+"/ "+tmpDirRemote+"/", "/", hostGo, portGo); err != nil {
+	if output, err := runSftpClient(t,
+		"cd /\r\n"+
+			"mkdir "+tmpDirRemote+"\r\n"+
+			"cd "+tmpDirRemote+"\r\n"+
+			"lcd "+dirLocal+"\r\n"+
+			"put -r -P .",
+		"/", hostGo, portGo); err != nil {
 		t.Fatalf("runSftpClient failed: %v, output\n%v\n", err, output)
 	}
 
-	compareDirectoriesRecursive(t, dirLocal, path.Join(tmpDirRemote, path.Base(dirLocal)))
+	compareDirectoriesRecursive(t, dirLocal, tmpDirRemote)
 }
 
 func TestServerGetRecursive(t *testing.T) {

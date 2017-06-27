@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ScriptRock/crypto/ssh"
 	"github.com/kr/fs"
 	"github.com/pkg/errors"
-	"github.com/ScriptRock/crypto/ssh"
 )
 
 // MaxPacket sets the maximum size of the payload.

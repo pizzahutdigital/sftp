@@ -230,6 +230,10 @@ func handlePacket(s *Server, p interface{}) error {
 		if err != nil {
 			return s.sendError(p, err)
 		}
+		f, err = filepath.EvalSymlinks(f)
+		if err != nil {
+			return s.sendError(p, err)
+		}
 		f = filepath.Clean(f)
 		f = filepath.ToSlash(f) // make path more Unix like on windows servers
 		return s.sendPacket(sshFxpNamePacket{
@@ -270,6 +274,9 @@ func handlePacket(s *Server, p interface{}) error {
 
 		_, err := f.WriteAt(p.Data, int64(p.Offset))
 		return s.sendError(p, err)
+	case *sshFxpExtendedPacket:
+		err := p.respond(s)
+		return errors.Wrap(err, fmt.Sprintf("extended pkt %s respond failed", p.ExtendedRequest))
 	case serverRespondablePacket:
 		err := p.respond(s)
 		return errors.Wrap(err, "pkt.respond failed")
